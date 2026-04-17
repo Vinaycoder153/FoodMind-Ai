@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FoodMind AI — Review Intelligence Engine</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="charts.js"></script>
+  </head>
+  <body>
+    <!-- ======= HEADER ======= -->
+    <header class="site-header">
+      <div class="header-inner">
+        <div class="logo">
+          <span class="logo-icon">🧠</span>
+          <span class="logo-text">FoodMind <span class="accent">AI</span></span>
+        </div>
+        <nav class="header-nav">
+          <a href="#overview">Overview</a>
+          <a href="#analyse">Live Analysis</a>
+          <a href="#menu-actions">Menu Actions</a>
+        </nav>
+        <div class="header-badge">MVP v2.0</div>
+      </div>
+    </header>
+
+    <!-- ======= HERO ======= -->
+    <section class="hero">
+      <div class="hero-inner">
+        <h1>Turn Messy Reviews Into <span class="accent">Menu Gold</span></h1>
+        <p class="hero-sub">
+          An AI system that not only <em>understands</em> customer feedback but
+          continuously improves food quality through measurable, data-driven
+          decisions.
+        </p>
+        <div class="hero-badges">
+          <span class="badge badge-blue">🌍 Multilingual</span>
+          <span class="badge badge-green">📊 Real-time Insights</span>
+          <span class="badge badge-orange">🚀 Impact Simulation</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======= INPUT SECTION ======= -->
+    <section id="analyse" class="section">
+      <div class="container">
+        <h2 class="section-title">📝 Input Reviews</h2>
+        <p class="section-desc">
+          Paste raw customer reviews below (English, Hindi, or Kannada) — one
+          per line — or upload a CSV.
+        </p>
+
+        <div class="input-grid">
+          <div class="input-card">
+            <label class="input-label"
+              >Paste Reviews
+              <span class="lang-hint">(English / हिंदी / ಕನ್ನಡ)</span></label
+            >
+            <textarea
+              id="reviewsInput"
+              placeholder="e.g.
+The food was too oily and quantity was very less!
+बहुत ज़्यादा तेल था, खाना खराब था
+ಎಣ್ಣೆ ತುಂಬಾ ಜಾಸ್ತಿ ಇತ್ತು, ರುಚಿ ಚೆನ್ನಾಗಿದೆ
+The spice level is perfect but portion size disappoints.
+Worst food ever, tasteless and cold.
+Amazing biryani, loved the flavors!
+Too much masala, made me feel sick.
+Good quantity but very greasy."
+            ></textarea>
+            <div class="input-meta">
+              <span id="reviewCount">0 reviews</span>
+              <button class="btn-secondary" id="loadSample">
+                Load Sample Reviews
+              </button>
+            </div>
+          </div>
+
+          <div class="input-card upload-card">
+            <label class="input-label">Upload CSV</label>
+            <div class="upload-zone" id="uploadZone">
+              <div class="upload-icon">📂</div>
+              <p>Drag & drop a CSV file here</p>
+              <p class="upload-hint">or</p>
+              <label class="btn-outline" for="csvFile">Browse File</label>
+              <input type="file" id="csvFile" accept=".csv" hidden />
+            </div>
+            <p class="upload-note">
+              CSV must have a <code>review</code> column
+            </p>
+            <div id="uploadStatus" class="upload-status hidden"></div>
+          </div>
+        </div>
+
+        <div class="analyse-action">
+          <button class="btn-primary" id="analyseBtn">
+            <span class="btn-icon">⚡</span> Generate MVP Insights
+          </button>
+        </div>
+
+        <div id="loadingBar" class="loading-bar hidden">
+          <div class="loading-inner"></div>
+          <p>Analysing reviews with AI…</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======= RESULTS (hidden until analysis) ======= -->
+    <div id="results" class="hidden">
+      <!-- OVERVIEW -->
+      <section id="overview" class="section section-dark">
+        <div class="container">
+          <h2 class="section-title">📊 Overview</h2>
+
+          <!-- Metric cards -->
+          <div class="metrics-grid" id="metricsGrid">
+            <div class="metric-card">
+              <div class="metric-icon">📝</div>
+              <div class="metric-value" id="metTotalReviews">—</div>
+              <div class="metric-label">Total Reviews</div>
+            </div>
+            <div class="metric-card positive">
+              <div class="metric-icon">😊</div>
+              <div class="metric-value" id="metPositive">—</div>
+              <div class="metric-label">Positive</div>
+            </div>
+            <div class="metric-card negative">
+              <div class="metric-icon">😞</div>
+              <div class="metric-value" id="metNegative">—</div>
+              <div class="metric-label">Negative</div>
+            </div>
+            <div class="metric-card neutral">
+              <div class="metric-icon">😐</div>
+              <div class="metric-value" id="metNeutral">—</div>
+              <div class="metric-label">Neutral</div>
+            </div>
+            <div class="metric-card warning">
+              <div class="metric-icon">⭐</div>
+              <div class="metric-value" id="metCurrentRating">—</div>
+              <div class="metric-label">Est. Current Rating</div>
+            </div>
+            <div class="metric-card success">
+              <div class="metric-icon">📈</div>
+              <div class="metric-value" id="metPredictedRating">—</div>
+              <div class="metric-label">Predicted Rating</div>
+            </div>
+          </div>
+
+          <!-- Alert banners -->
+          <div id="alertBanners" class="alert-banners"></div>
+
+          <!-- Trend badge -->
+          <div id="trendBadge" class="trend-badge"></div>
+
+          <!-- Charts row -->
+          <div class="charts-row">
+            <div class="chart-card">
+              <h3>Sentiment Distribution</h3>
+              <div class="chart-wrap">
+                <canvas id="sentimentChart"></canvas>
+              </div>
+            </div>
+            <div class="chart-card">
+              <h3>Complaint % by Feature</h3>
+              <div class="chart-wrap">
+                <canvas id="complaintChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIVE REVIEW ANALYSIS -->
+      <section class="section">
+        <div class="container">
+          <h2 class="section-title">🔍 Top Issues</h2>
+          <p class="section-desc">
+            Highest-impact complaint clusters ranked by frequency, severity, and
+            confidence.
+          </p>
+          <div id="reviewList" class="review-list"></div>
+        </div>
+      </section>
+
+      <!-- MENU ACTIONS -->
+      <section id="menu-actions" class="section section-dark">
+        <div class="container">
+          <h2 class="section-title">🎯 AI Recommendations</h2>
+          <p class="section-desc">
+            Generated based on complaint patterns. Each includes confidence
+            level and reasoning.
+          </p>
+          <div id="recommendationsList" class="recommendations-list"></div>
+        </div>
+      </section>
+
+      <!-- SMART CUSTOMISATION -->
+      <section class="section">
+        <div class="container">
+          <h2 class="section-title">🍽️ Strengths & Wins</h2>
+          <p class="section-desc">
+            Positive feature clusters worth preserving and scaling.
+          </p>
+          <div id="customisationsList" class="customisations-list"></div>
+        </div>
+      </section>
+
+      <!-- IMPACT SIMULATOR -->
+      <section class="section section-dark">
+        <div class="container">
+          <h2 class="section-title">⚡ Impact Simulator</h2>
+          <p class="section-desc">
+            Predicted improvements after implementing recommendations.
+          </p>
+
+          <div class="impact-grid">
+            <div class="impact-summary-card">
+              <div class="impact-icon">📈</div>
+              <div class="impact-text" id="impactSummary">—</div>
+            </div>
+            <div class="rating-comparison">
+              <div class="rating-box before">
+                <div class="rating-label">BEFORE</div>
+                <div class="rating-stars" id="beforeStars"></div>
+                <div class="rating-number" id="beforeRating">—</div>
+              </div>
+              <div class="rating-arrow">→</div>
+              <div class="rating-box after">
+                <div class="rating-label">AFTER</div>
+                <div class="rating-stars" id="afterStars"></div>
+                <div class="rating-number" id="afterRating">—</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Before / after complaint chart -->
+          <div class="chart-card wide-chart">
+            <h3>Before vs After — Complaint Reduction</h3>
+            <div class="chart-wrap">
+              <canvas id="beforeAfterChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FEEDBACK LOOP DASHBOARD -->
+      <section class="section">
+        <div class="container">
+          <h2 class="section-title">🔄 Feedback Loop Dashboard</h2>
+          <p class="section-desc">
+            Closing the loop — simulated improvement after action.
+          </p>
+          <div id="feedbackLoop" class="feedback-loop"></div>
+        </div>
+      </section>
+    </div>
+    <!-- /#results -->
+
+    <!-- ======= FOOTER ======= -->
+    <footer class="site-footer">
+      <div class="container">
+        <p>
+          🧠 FoodMind AI &mdash; Hackathon MVP &mdash; Built with FastAPI +
+          Canvas Charts
+        </p>
+      </div>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
