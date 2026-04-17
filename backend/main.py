@@ -11,12 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from nlp_engine import (
-    analyse_review,
-    analyse_review_precise,
-    aggregate_insights,
-    analyze_mvp_reviews,
-)
+from nlp_engine import analyse_review, analyse_review_precise, aggregate_insights
 
 app = FastAPI(
     title="FoodMind AI API",
@@ -99,21 +94,6 @@ def analyse_precise(request: ReviewsRequest):
     return JSONResponse(content={"individual": individual})
 
 
-@app.post("/mvp/analyse")
-def analyse_mvp(request: ReviewsRequest):
-    """
-    Production MVP endpoint with strict aggregate output.
-    """
-    if not request.reviews:
-        raise HTTPException(status_code=400, detail="No reviews provided")
-
-    raw_reviews = [r.strip() for r in request.reviews if r.strip()]
-    if not raw_reviews:
-        raise HTTPException(status_code=400, detail="All reviews are empty")
-
-    return JSONResponse(content=analyze_mvp_reviews(raw_reviews))
-
-
 @app.post("/upload-csv")
 async def upload_csv(file: UploadFile = File(...)):
     """
@@ -158,4 +138,7 @@ async def upload_csv(file: UploadFile = File(...)):
     if not reviews:
         raise HTTPException(status_code=400, detail="No review text found in CSV")
 
-    return JSONResponse(content=analyze_mvp_reviews(reviews))
+    individual = [analyse_review(text) for text in reviews]
+    insights = aggregate_insights(individual)
+
+    return JSONResponse(content={"individual": individual, "insights": insights})

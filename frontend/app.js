@@ -94,8 +94,7 @@ async function handleCSVUpload(file) {
       throw new Error(err.detail || "Upload failed");
     }
     const data = await res.json();
-    const processed = data.insights?.total_reviews || 0;
-    status.textContent = `✅ ${file.name} uploaded — ${processed} reviews processed`;
+    status.textContent = `✅ ${file.name} uploaded — ${data.individual.length} reviews processed`;
     renderResults(data);
   } catch (err) {
     status.className = "upload-status error";
@@ -125,7 +124,7 @@ async function analyseReviews() {
   $("results").classList.add("hidden");
 
   try {
-    const res = await fetch(`${API_BASE}/mvp/analyse`, {
+    const res = await fetch(`${API_BASE}/analyse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reviews }),
@@ -152,18 +151,14 @@ async function analyseReviews() {
 /* Render all results                                                   */
 /* ------------------------------------------------------------------ */
 function renderResults(data) {
-  const insights = data.insights || {};
-  const topIssues = data.top_issues || [];
-  const recommendations = data.recommendations || [];
-  const impact = data.impact_simulation || {};
-  const comparison = data.before_vs_after || {};
+  const { individual, insights } = data;
 
-  renderOverview(insights, impact, topIssues);
-  renderReviewList(topIssues);
-  renderRecommendations(recommendations);
-  renderCustomisations(insights.strengths || []);
-  renderImpact(impact, comparison);
-  renderFeedbackLoop(comparison);
+  renderOverview(insights);
+  renderReviewList(individual);
+  renderRecommendations(insights.recommendations || []);
+  renderCustomisations(insights.customisations || []);
+  renderImpact(insights.impact || {});
+  renderFeedbackLoop(insights.impact || {});
 
   $("results").classList.remove("hidden");
   $("results").scrollIntoView({ behavior: "smooth" });
@@ -175,17 +170,16 @@ function renderResults(data) {
 let sentimentChartInst = null;
 let complaintChartInst = null;
 
-function renderOverview(insights, impact, topIssues) {
-  const sentiment = insights.sentiment_distribution || {};
-  const languages = insights.languages || {};
-  const featureSummary = insights.feature_summary || {};
-  const dominantIssue = topIssues[0] || null;
+function renderOverview(insights) {
+  const so = insights.sentiment_overview || {};
+  const impact = insights.impact || {};
+  const trend = insights.trend || {};
 
   // Metric cards
   $("metTotalReviews").textContent = insights.total_reviews || 0;
-  $("metPositive").textContent = `${sentiment.positive || 0}%`;
-  $("metNegative").textContent = `${sentiment.negative || 0}%`;
-  $("metNeutral").textContent = `${sentiment.neutral || 0}%`;
+  $("metPositive").textContent = `${so.positive || 0}%`;
+  $("metNegative").textContent = `${so.negative || 0}%`;
+  $("metNeutral").textContent = `${so.neutral || 0}%`;
   $("metCurrentRating").textContent = `${impact.current_rating || "—"} ⭐`;
   $("metPredictedRating").textContent = `${impact.predicted_rating || "—"} ⭐`;
 
@@ -201,15 +195,8 @@ function renderOverview(insights, impact, topIssues) {
 
   // Trend
   const trendEl = $("trendBadge");
-  trendEl.className = `trend-badge ${impact.improvement_pct >= 0 ? "improving" : "stable"}`;
-  trendEl.textContent = dominantIssue
-    ? `Top issue: ${dominantIssue.feature} · language mix: ${
-        Object.entries(languages)
-          .filter(([, v]) => v)
-          .map(([k]) => k)
-          .join(", ") || "unknown"
-      }`
-    : `No major complaint clusters detected`;
+  trendEl.className = `trend-badge ${trend.direction || "insufficient_data"}`;
+  trendEl.textContent = trend.message || "";
 
   // Sentiment doughnut chart
   const sentimentCtx = document
@@ -219,16 +206,11 @@ function renderOverview(insights, impact, topIssues) {
   sentimentChartInst = new Chart(sentimentCtx, {
     type: "doughnut",
     data: {
-      labels: ["Positive", "Negative", "Neutral", "Mixed"],
+      labels: ["Positive", "Negative", "Neutral"],
       datasets: [
         {
-          data: [
-            sentiment.positive || 0,
-            sentiment.negative || 0,
-            sentiment.neutral || 0,
-            sentiment.mixed || 0,
-          ],
-          backgroundColor: ["#34d399", "#f87171", "#64748b", "#fbbf24"],
+          data: [so.positive || 0, so.negative || 0, so.neutral || 0],
+          backgroundColor: ["#34d399", "#f87171", "#64748b"],
           borderWidth: 0,
           hoverOffset: 8,
         },
@@ -251,12 +233,12 @@ function renderOverview(insights, impact, topIssues) {
   });
 
   // Complaint bar chart
-  const features = Object.keys(featureSummary);
-  const values = features.map((f) => featureSummary[f].negative || 0);
+  const complaints = insights.feature_complaints || {};
+  const features = Object.keys(complaints);
+  const values = Object.values(complaints);
   const colors = features.map((f) => {
-    const negativeCount = featureSummary[f].negative || 0;
-    if (negativeCount >= 2) return "#f87171";
-    if (negativeCount >= 1) return "#fbbf24";
+    if (values[features.indexOf(f)] >= 40) return "#f87171";
+    if (values[features.indexOf(f)] >= 20) return "#fbbf24";
     return "#6c63ff";
   });
 
@@ -270,7 +252,7 @@ function renderOverview(insights, impact, topIssues) {
       labels: features.map((f) => f.charAt(0).toUpperCase() + f.slice(1)),
       datasets: [
         {
-          label: "Negative Mentions",
+          label: "Negative Mentions (%)",
           data: values,
           backgroundColor: colors,
           borderRadius: 6,
@@ -285,9 +267,9 @@ function renderOverview(insights, impact, topIssues) {
       scales: {
         x: { ticks: { color: "#8892aa" }, grid: { color: "#2d3652" } },
         y: {
-          ticks: { color: "#8892aa" },
+          ticks: { color: "#8892aa", callback: (v) => `${v}%` },
           grid: { color: "#2d3652" },
-          max: Math.max(5, ...values) + 1,
+          max: 100,
         },
       },
     },
@@ -303,24 +285,22 @@ function renderReviewList(reviews) {
 
   reviews.forEach((r, idx) => {
     const div = document.createElement("div");
-    div.className = "review-item negative";
+    div.className = `review-item ${r.sentiment}`;
 
-    const examples = (r.examples || [])
-      .map((e) => `<li>${escapeHtml(e)}</li>`)
+    const tagHTML = (r.tags || [])
+      .map(
+        (t) =>
+          `<span class="tag ${t.sentiment}">${featureIcon(t.feature)} ${t.feature}</span>`,
+      )
       .join("");
 
     div.innerHTML = `
       <div class="review-header">
         <span class="review-number">#${idx + 1}</span>
-        <span class="sentiment-pill negative">${featureIcon(r.feature)} ${escapeHtml(r.feature)}</span>
+        <span class="sentiment-pill ${r.sentiment}">${sentimentEmoji(r.sentiment)} ${r.sentiment}</span>
       </div>
-      <div class="review-text">Impact score: ${escapeHtml(String(r.impact_score || 0))}</div>
-      <div class="review-tags">
-        <span class="tag negative">Frequency: ${escapeHtml(String(Math.round((r.frequency || 0) * 100)))}%</span>
-        <span class="tag negative">Severity: ${escapeHtml(String(r.severity || 0))}</span>
-        <span class="tag negative">Confidence: ${escapeHtml(String(r.confidence || 0))}</span>
-      </div>
-      ${examples ? `<div class="review-text"><ul>${examples}</ul></div>` : ""}
+      <div class="review-text">"${escapeHtml(r.text)}"</div>
+      ${tagHTML ? `<div class="review-tags">${tagHTML}</div>` : ""}
     `;
     container.appendChild(div);
   });
@@ -335,7 +315,7 @@ function renderRecommendations(recs) {
 
   if (!recs.length) {
     container.innerHTML =
-      "<p style='color:var(--text-dim)'>No significant issues detected. Keep collecting feedback. 🎉</p>";
+      "<p style='color:var(--text-dim)'>No significant complaints detected. Keep up the great work! 🎉</p>";
     return;
   }
 
@@ -349,13 +329,13 @@ function renderRecommendations(recs) {
     div.innerHTML = `
       <div>
         <span class="rec-feature-tag">${featureIcon(rec.feature)} ${rec.feature}</span>
-        <div class="rec-action">${idx + 1}. ${escapeHtml(rec.fix)}</div>
-        <div class="rec-detail">Priority: ${escapeHtml(rec.priority)} · ${escapeHtml(rec.effort_vs_impact)}</div>
-        <div class="rec-reasoning">📊 ${escapeHtml(rec.rationale)}</div>
+        <div class="rec-action">${idx + 1}. ${escapeHtml(rec.action)}</div>
+        <div class="rec-detail">${escapeHtml(rec.detail)}</div>
+        <div class="rec-reasoning">📊 ${escapeHtml(rec.reasoning)}</div>
       </div>
       <div class="rec-confidence">
         <div class="confidence-ring" style="--pct:${deg}">${pct}</div>
-        <div class="confidence-label">Lift +${escapeHtml(String(rec.expected_rating_lift || 0))}</div>
+        <div class="confidence-label">Confidence</div>
       </div>
     `;
     container.appendChild(div);
@@ -373,10 +353,10 @@ function renderCustomisations(items) {
     const div = document.createElement("div");
     div.className = "custom-card";
     div.innerHTML = `
-      <div class="custom-tag">${escapeHtml(item.feature)}</div>
-      <div class="custom-name">Strength score ${escapeHtml(String(item.strength_score || 0))}</div>
-      <div class="custom-desc">${escapeHtml(String(item.positive_mentions || 0))} positive mentions · ${escapeHtml(String(Math.round((item.frequency || 0) * 100)))}% of reviews</div>
-      <span class="custom-price">Confidence ${escapeHtml(String(item.confidence || 0))}</span>
+      <div class="custom-tag">${escapeHtml(item.tag)}</div>
+      <div class="custom-name">${escapeHtml(item.name)}</div>
+      <div class="custom-desc">${escapeHtml(item.description)}</div>
+      <span class="custom-price">${escapeHtml(item.price_delta)}</span>
     `;
     container.appendChild(div);
   });
@@ -387,14 +367,13 @@ function renderCustomisations(items) {
 /* ------------------------------------------------------------------ */
 let beforeAfterChartInst = null;
 
-function renderImpact(impact, comparison) {
+function renderImpact(impact) {
   if (!impact.current_rating) return;
 
   const summaryEl = $("impactSummary");
   summaryEl.innerHTML = `
-    Current rating: <strong>${escapeHtml(String(impact.current_rating || "—"))} ⭐</strong><br>
-    Predicted rating: <strong>${escapeHtml(String(impact.predicted_rating || "—"))} ⭐</strong><br>
-    Improvement: <strong>${escapeHtml(String(impact.improvement_pct || 0))}%</strong>
+    ${escapeHtml(impact.summary || "")}<br><br>
+    <strong>+${impact.rating_increase} ⭐</strong> predicted rating boost
   `;
 
   $("beforeRating").textContent = impact.current_rating;
@@ -403,8 +382,8 @@ function renderImpact(impact, comparison) {
   $("afterStars").textContent = starString(impact.predicted_rating);
 
   // Before/after bar chart
-  const before = comparison.before?.sentiment_distribution || {};
-  const after = comparison.after?.expected_sentiment_distribution || {};
+  const before = impact.before_complaints || {};
+  const after = impact.after_complaints || {};
   const features = Object.keys(before);
 
   const ctx = document.getElementById("beforeAfterChart").getContext("2d");
@@ -453,8 +432,8 @@ function renderFeedbackLoop(impact) {
   const container = $("feedbackLoop");
   container.innerHTML = "";
 
-  const before = impact.before?.sentiment_distribution || {};
-  const after = impact.after?.expected_sentiment_distribution || {};
+  const before = impact.before_complaints || {};
+  const after = impact.after_complaints || {};
   const features = Object.keys(before);
   if (!features.length) return;
 
@@ -496,17 +475,7 @@ function renderFeedbackLoop(impact) {
 /* Utility helpers                                                      */
 /* ------------------------------------------------------------------ */
 function featureIcon(feature) {
-  const icons = {
-    oil_level: "🛢️",
-    spice_level: "🌶️",
-    quantity: "⚖️",
-    texture: "🥘",
-    taste: "👅",
-    price_value: "💸",
-    freshness: "🧊",
-    service: "🧑‍🍳",
-    hygiene: "🧼",
-  };
+  const icons = { oil: "🛢️", spice: "🌶️", quantity: "⚖️", taste: "👅" };
   return icons[feature] || "🔍";
 }
 
